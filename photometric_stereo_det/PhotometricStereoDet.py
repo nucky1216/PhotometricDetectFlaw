@@ -165,7 +165,7 @@ def generate_PM_Cam_list(num_of_cam=1):
     return PM_Cam_list
 
 
-def generate_differential_image_list(base_image, pm_image_list, black_list=None,crop=0,dstX=200,dstY=200):
+def generate_differential_image_list(base_image, pm_image_list, black_list=None,crop=0,dstX=200,dstY=200,RawBin=0,PmForDetect=2):
     '''
     生成一组差别图数据。将使用在不同的点光源下拍摄的图像与基础图像（无光源）作差，生成差别图。
 
@@ -178,12 +178,31 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
     ds : 20cm 对应的像素距离
     '''
     assert len(base_image[base_image>0])>0,'the base_image without lights is invalid！'
-    
-    assert base_image.shape==pm_image_list[0].shape ,'the shapes of base_img and pm_img  are not Consistent'
-    assert len(base_image.shape)==2 and len(pm_image_list[0].shape)==2,'required the gray-image input,please convert image to cv2.COLOR_BGR2GRAY'
-    #assert isinstance(base_image[0][0],np.float32)== True and isinstance(pm_image_list[0][0][0],np.float32)== True,'Need to image numpu.astype=\'np.float32\''
-    #assert base_image[0][0]<=1 and  pm_image_list[0][0][0]<=1,'the pix_element required dvide by 255,such as operate: \'img= img/255\''
-    ds=1618
+
+    ds = 1618
+    pmFD = pm_image_list[PmForDetect]
+    # Load　picture from bin flow
+    if RawBin == 1:
+        pmFD = None
+
+        #base_image = ReadBinFromFlow(base_image)
+        base_image=base_image   #read picture from numpy.ndarry
+        print('over explouse(2**12) pixel num:', len(base_image[base_image > 4096]))
+
+        print('liukh_ base-image shape:', base_image.shape, ' dtype:', base_image.dtype)
+        datas = []
+        for i, pm in enumerate(pm_image_list):
+            pm = pm
+            # pm=pm   #read picture from numpy.ndarry
+            print('over explouse(2**12) pixel num:', len(pm[pm > 4096]))
+            datas.append(pm)
+            # provide a BGR picture for detecting rivets
+            if i == PmForDetect:
+                pm = pm * (256 / (2 ** 12))
+                pm=cv2.cvtColor(pm,cv2.COLOR_GRAY2BGR)
+                pm = pm.astype(np.uint8)
+                pmFD = pm
+                print('liukh_pmFD shape:', pmFD.shape, ' dtype:', pmFD.dtype)
     if len(pm_image_list)!=6:
         print('Warning:aquired ',len(pm_image_list),' pm_images,recommend to require 6 images with lights ')
     if black_list is None:
@@ -200,7 +219,7 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
             image=image[dstY:h-dstY,dstX:w-dstX]
         ret.append((idx, image - base_image, idx * 10))
 
-    return ret
+    return ret,PmForDetect
 
 
 def detect_rivets(PM_IData, thres_dist=20, thres_votes=2):
@@ -211,7 +230,7 @@ def detect_rivets(PM_IData, thres_dist=20, thres_votes=2):
     :return:
     '''
     #print('PM_IData:',PM_IData[0])
-    
+
     assert len(PM_IData[0])==3,'lack of some elems,the requierd format like (LID(int),img(array),uuid(int))'
     assert thres_votes>0,'the thres_vote should bigger than 0'
     if len(PM_IData)!=6:
@@ -333,7 +352,7 @@ class PhotometricStereoDet:
         # 光源信息
         self.lights = kwargs['lights']
         
-        
+
         # 所有相机的初始位置，用于得到相机两两之间的rt
         # lsit of PM_cam instance
         self.cams_init = kwargs['cams_init']
@@ -541,7 +560,7 @@ class PhotometricStereoDet:
         return self.normal, mask
 
 
-    def detect_flaw(self, rivits_points, mask=None,bbox_max_size=560,bbox_max_lenth=340):
+    def detect_flaw(self, rivits_points, mask=None,bbox_max_size=560,bbox_max_lenth=340,radius=80):
         '''
         检测缺陷。须先计算法线后才可检测。
 
@@ -578,7 +597,7 @@ class PhotometricStereoDet:
         else:
             down_grad = img_grad
 
-        self.cur_det_bboxes ,bboxCredibility= flaw_bboxes(down_grad, rivits_points, self.rs_scale, self.grad_thresh, self.bboxes_cnt_thresh, self.bbox_size_thresh, down_mask,bbox_max_size,bbox_max_lenth)
+        self.cur_det_bboxes ,bboxCredibility= flaw_bboxes(down_grad, rivits_points, self.rs_scale, self.grad_thresh, self.bboxes_cnt_thresh, self.bbox_size_thresh, radius,down_mask,bbox_max_size,bbox_max_lenth)
 
         
         torch.cuda.empty_cache()
@@ -884,8 +903,9 @@ class PhotometricStereoDet:
         gy[:, gy.shape[1] - 1] = 0
         print('gx type',type(gx))
 
-       # grad = gx * 0.5 + gy * 0.5
+        #grad = gx * 0.5 + gy * 0.5
         grad=torch.maximum(gx,gy)
+        #grad=gx+gy
         print('Running Here')
 #         gx=gx.cpu().numpy()
 #         gy=gy.cpu().numpy()
@@ -899,11 +919,12 @@ class PhotometricStereoDet:
         grad=torch.max(grad,axis=2)[0]
         grad=grad.cpu().numpy()
 
-#         grad = np.mean(grad, axis=2)
+       # grad = np.mean(grad, axis=2)
 
 #         grad = grad.astype(np.uint8)
         TEST_end('nomal grad Sobel2 in pytorch',tb)
-        cv2.imwrite(f'../OutPut/{self.Dir}-grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',grad)
+        cv2.imwrite(f'{self.Dir}/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',grad)
+        print(f'../OutPut/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png')
         #grad=cv2.GaussianBlur(grad,(11,11),0)
         #grad=cv2.bilateralFilter(grad,3,350,1)
         #print('bilateralFilter Blur Done!')
@@ -923,10 +944,10 @@ class PhotometricStereoDet:
         output:
         imgs: ndarray (n*h*w), np.float32, (0.0, 1.0) filtererd
         '''
-
+        begin_time=time.time()
         imgs = imgs.astype(np.float32)
         for cnt in range(filter_cnt):
             for i in range(imgs.shape[0]):
                 imgs[i, :, :] = cv2.bilateralFilter(imgs[i, :, :], self.K_size, self.Dist, self.N)
-
+        print('==================Time cost in BilaterFilter:',time.time()-begin_time,'s =============================')
         return imgs
