@@ -165,7 +165,7 @@ def generate_PM_Cam_list(num_of_cam=1):
     return PM_Cam_list
 
 
-def generate_differential_image_list(base_image, pm_image_list, black_list=None,crop=0,dstX=200,dstY=200,RawBin=0,PmForDetect=2):
+def generate_differential_image_list(base_image, pm_image_list, black_list=None,crop=0,dstX=3500,dstY=3000,RawBin=0,PmForDetect=2):
     '''
     生成一组差别图数据。将使用在不同的点光源下拍摄的图像与基础图像（无光源）作差，生成差别图。
 
@@ -209,14 +209,16 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
         black_list = []
     ret = []
     h,w=base_image.shape
+    c_y = h / 2
+    c_x = w / 2
     print('base_gray shape',base_image.shape,base_image.dtype)
     if crop==1:
-        base_image=base_image[dstY:h-dstY,dstX:w-dstX]
+        base_image=base_image[int(c_y-dstY/2):int(c_y+dstY/2),int(c_x-dstX/2):int(c_x+dstX/2)]
     for idx, image in enumerate(pm_image_list):
         if idx in black_list:
             continue
         if crop==1:
-            image=image[dstY:h-dstY,dstX:w-dstX]
+            image=image[int(c_y-dstY/2):int(c_y+dstY/2),int(c_x-dstX/2):int(c_x+dstX/2)]
         ret.append((idx, image - base_image, idx * 10))
 
     return ret,pmFD
