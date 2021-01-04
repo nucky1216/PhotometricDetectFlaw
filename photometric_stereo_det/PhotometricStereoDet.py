@@ -199,8 +199,8 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
             # provide a BGR picture for detecting rivets
             if i == PmForDetect:
                 pm = pm * (256 / (2 ** 12))
-                pm=cv2.cvtColor(pm,cv2.COLOR_GRAY2BGR)
                 pm = pm.astype(np.uint8)
+                pm=cv2.cvtColor(pm,cv2.COLOR_GRAY2BGR)
                 pmFD = pm
                 print('liukh_pmFD shape:', pmFD.shape, ' dtype:', pmFD.dtype)
     if len(pm_image_list)!=6:
@@ -219,7 +219,7 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
             image=image[dstY:h-dstY,dstX:w-dstX]
         ret.append((idx, image - base_image, idx * 10))
 
-    return ret,PmForDetect
+    return ret,pmFD
 
 
 def detect_rivets(PM_IData, thres_dist=20, thres_votes=2):
@@ -560,7 +560,7 @@ class PhotometricStereoDet:
         return self.normal, mask
 
 
-    def detect_flaw(self, rivits_points, mask=None,bbox_max_size=560,bbox_max_lenth=340,radius=80):
+    def detect_flaw(self, rivits_points, mask=None,bbox_max_size=560,bbox_max_lenth=340,radius=10,savepath=''):
         '''
         检测缺陷。须先计算法线后才可检测。
 
@@ -575,7 +575,9 @@ class PhotometricStereoDet:
 
 
         img_grad = self.normal_gradient(self.normal)
-
+        if savepath!='':
+            cv2.imwrite(f'{savepath}/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png', img_grad)
+            print(f'../OutPut/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png')
         print('img_grad.shape outer:',img_grad.shape)
         down_mask = None
         if self.rs_scale > 1:
@@ -597,7 +599,7 @@ class PhotometricStereoDet:
         else:
             down_grad = img_grad
 
-        self.cur_det_bboxes ,bboxCredibility= flaw_bboxes(down_grad, rivits_points, self.rs_scale, self.grad_thresh, self.bboxes_cnt_thresh, self.bbox_size_thresh, radius,down_mask,bbox_max_size,bbox_max_lenth)
+        self.cur_det_bboxes ,bboxCredibility= flaw_bboxes(down_grad, rivits_points, self.rs_scale, self.grad_thresh, self.bboxes_cnt_thresh, self.bbox_size_thresh, radius,down_mask,bbox_max_size,bbox_max_lenth,SaveMask=savepath)
 
         
         torch.cuda.empty_cache()
@@ -923,8 +925,7 @@ class PhotometricStereoDet:
 
 #         grad = grad.astype(np.uint8)
         TEST_end('nomal grad Sobel2 in pytorch',tb)
-        cv2.imwrite(f'{self.Dir}/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',grad)
-        print(f'../OutPut/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png')
+
         #grad=cv2.GaussianBlur(grad,(11,11),0)
         #grad=cv2.bilateralFilter(grad,3,350,1)
         #print('bilateralFilter Blur Done!')
