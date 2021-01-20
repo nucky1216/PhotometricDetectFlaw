@@ -186,23 +186,26 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
         pmFD = None
 
         #base_image = ReadBinFromFlow(base_image)
-        base_image=base_image   #read picture from numpy.ndarry
+        # base_image=base_image.astype(np.float64)/65536   #read picture from numpy.ndarry
         print('over explouse(2**12) pixel num:', len(base_image[base_image > 4096]))
 
         print('liukh_ base-image shape:', base_image.shape, ' dtype:', base_image.dtype)
         datas = []
         for i, pm in enumerate(pm_image_list):
-            pm = pm
+
+            if i == PmForDetect:
+                pmFD = pm.copy() * (256 / (2 ** 12))
+                pmFD = pmFD.astype(np.uint8)
+                pmFD = cv2.cvtColor(pmFD, cv2.COLOR_GRAY2BGR)
+
+                print('liukh_pmFD shape:', pmFD.shape, ' dtype:', pmFD.dtype)
+            # pm = pm.astype(np.float64)/65536
+
             # pm=pm   #read picture from numpy.ndarry
             print('over explouse(2**12) pixel num:', len(pm[pm > 4096]))
             datas.append(pm)
             # provide a BGR picture for detecting rivets
-            if i == PmForDetect:
-                pm = pm * (256 / (2 ** 12))
-                pm = pm.astype(np.uint8)
-                pm=cv2.cvtColor(pm,cv2.COLOR_GRAY2BGR)
-                pmFD = pm
-                print('liukh_pmFD shape:', pmFD.shape, ' dtype:', pmFD.dtype)
+
     if len(pm_image_list)!=6:
         print('Warning:aquired ',len(pm_image_list),' pm_images,recommend to require 6 images with lights ')
     if black_list is None:
@@ -213,7 +216,9 @@ def generate_differential_image_list(base_image, pm_image_list, black_list=None,
     c_x = w / 2
     print('base_gray shape',base_image.shape,base_image.dtype)
     if crop==1:
+        print('Corp the image...........................')
         base_image=base_image[int(c_y-dstY/2):int(c_y+dstY/2),int(c_x-dstX/2):int(c_x+dstX/2)]
+        #pmFD = pmFD[int(c_y - dstY / 2):int(c_y + dstY / 2), int(c_x - dstX / 2):int(c_x + dstX / 2)]
     for idx, image in enumerate(pm_image_list):
         if idx in black_list:
             continue
@@ -558,8 +563,8 @@ class PhotometricStereoDet:
         imgs = self.filter_img(imgs)
         
         #print('ldirs:',len(ldirs))
-        self.normal = self.normal_reconstruct(ldirs, imgs, depth_down_scale=depth_down_scale)
-        return self.normal, mask
+        self.normal ,normalDispaly= self.normal_reconstruct(ldirs, imgs, depth_down_scale=depth_down_scale)
+        return self.normal, normalDispaly,mask
 
 
     def detect_flaw(self, rivits_points, mask=None,bbox_max_size=560,bbox_max_lenth=340,radius=10,savepath=''):
@@ -573,14 +578,20 @@ class PhotometricStereoDet:
         assert type(rivits_points) ==np.ndarray,'the rivets_point’ type should be \'np.arry\',not the \'list\' type'
         #img_grad = self.normal_gradient(self.normal)
         
-        print('normal shape:',self.normal.shape)
+
 
 
         img_grad = self.normal_gradient(self.normal)
+        print('normal shape:', self.normal.shape,self.normal.dtype)
+        print('img_grad dtype:', img_grad.dtype)
         if savepath!='':
-            cv2.imwrite(f'{savepath}/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png', img_grad)
+
+            img_grad2=img_grad.copy()*65536
+            img_grad2=img_grad2.astype(np.uint16)
+            print('img_grad.shape outer22:', img_grad2.shape, img_grad2.dtype,len(img_grad[img_grad<0]))
+            cv2.imwrite(f'{savepath}/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png', img_grad2)
             print(f'../OutPut/grad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png')
-        print('img_grad.shape outer:',img_grad.shape)
+
         down_mask = None
         if self.rs_scale > 1:
 
@@ -588,9 +599,15 @@ class PhotometricStereoDet:
             grad_tensor = torch.tensor(img_expand).cuda()
             down_sample = torch.nn.MaxPool2d(self.rs_scale)
             down_grad_tensor = down_sample(grad_tensor)
-            down_grad = down_grad_tensor.cpu().numpy().astype(np.uint8)
+            down_grad = down_grad_tensor.cpu().numpy().astype(np.float64)
             down_grad = np.squeeze(down_grad)
-
+            if savepath != '':
+                down_grad16=down_grad.copy()*65536
+                down_grad16=down_grad16.astype(np.uint16)
+                cv2.imwrite(f'{savepath}/16bitDownGrad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',down_grad16 )
+                down_grad2=down_grad.copy()*256
+                down_grad2=down_grad2.astype(np.uint8)
+                cv2.imwrite(f'{savepath}/8bitDownGrad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',   down_grad2)
             if mask is not None:
                 down_mask = (~mask).float().expand((1,-1,-1))
                 down_mask = down_sample(down_mask)
@@ -600,6 +617,12 @@ class PhotometricStereoDet:
 
         else:
             down_grad = img_grad
+        print('--Radius:',radius,'img_grad dtype:',img_grad.dtype,'down_grad dtype:',down_grad.dtype)
+        down_grad=down_grad*65536
+        down_grad=down_grad.astype(np.uint16)
+        if savepath != '':
+            cv2.imwrite(f'{savepath}/16bitDownGrad{self.grad_thresh}-{self.K_size}-{self.Dist}-{self.N}.png',
+                        down_grad)
 
         self.cur_det_bboxes ,bboxCredibility= flaw_bboxes(down_grad, rivits_points, self.rs_scale, self.grad_thresh, self.bboxes_cnt_thresh, self.bbox_size_thresh, radius,down_mask,bbox_max_size,bbox_max_lenth,SaveMask=savepath)
 
@@ -749,9 +772,10 @@ class PhotometricStereoDet:
         lightdir_shape = lightdir.shape
         normal_flat = None
         
-        #print('lightdir shape:',lightdir.shape)
+        print('lightdir shape:',lightdir.shape)
         
         if len(lightdir_shape) == 2:
+            print('running shape 2')
             lightsdir_inv = np.linalg.pinv(lightdir.cpu().numpy())
             lightsdir_inv = torch.tensor(lightsdir_inv).cuda()
             
@@ -761,6 +785,7 @@ class PhotometricStereoDet:
             normal_flat = torch.matmul(lightsdir_inv, imgs_flat)
 
         elif len(lightdir_shape) == 3:
+            print('running shape 3')
             lightdir_mat = lightdir.reshape((img_shape[1], img_shape[2], img_shape[0], 3))
             height, width, num_lights, num_channels = lightdir_mat.size()
 
@@ -818,12 +843,15 @@ class PhotometricStereoDet:
         normal_flat[:, normal_flat_norm>0] = normal_flat[:, normal_flat_norm>0]/normal_flat_norm[normal_flat_norm>0]
         normal = normal_flat.reshape((3, img_shape[1], img_shape[2])).cpu().numpy()
         normal = np.moveaxis(normal, 0, -1)
-        normal = (normal + 1)/2*255
-        normal = normal.astype(np.uint8)
+        normal = normal
+        #normal = normal.astype(np.uint8)
         normal = normal[:, :, ::-1]
 
+        normalForDisplay=normal.copy()
+        normalForDisplay=(normalForDisplay+1)/2*256
+        normalForDisplay=normalForDisplay.astype(np.uint8)
         torch.cuda.empty_cache()
-        return normal
+        return normal ,normalForDisplay
 
     def ReWeightedGrad(self,img,Differ=15):
         w,h,ch=img.shape

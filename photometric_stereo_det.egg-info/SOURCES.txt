@@ -1,0 +1,10 @@
+setup.py
+photometric_stereo_det/FindNeibours.py
+photometric_stereo_det/PhotometricStereoDet.py
+photometric_stereo_det/__init__.py
+photometric_stereo_det/flaw_bbox.py
+photometric_stereo_det/utilities.py
+photometric_stereo_det.egg-info/PKG-INFO
+photometric_stereo_det.egg-info/SOURCES.txt
+photometric_stereo_det.egg-info/dependency_links.txt
+photometric_stereo_det.egg-info/top_level.txt
